@@ -1,0 +1,17 @@
+{
+  "name": "yealink-phonebook",
+  "version": "1.0.0",
+  "description": "FreePBX Bulk Handler CSV export'undan Yealink uzak rehber XML'i üretir.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "csv-parse": "^5.5.6"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
