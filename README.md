@@ -17,18 +17,23 @@ merkezi rehber sağlar.
 2. [railway.app](https://railway.app) üzerinde **New Project > Deploy from GitHub repo** seçin.
 3. Bu repoyu seçin, Railway otomatik olarak `package.json`'ı algılayıp Node.js olarak
    deploy eder.
-4. Railway proje ayarlarında **Variables** sekmesine gidip şunu ekleyin:
+4. Railway proje ayarlarında **Variables** sekmesine gidip şunları ekleyin:
    ```
    UPLOAD_PASSWORD=guclu-bir-sifre-belirleyin
+   PHONEBOOK_TOKEN=uzun-rastgele-bir-anahtar-belirleyin
    ```
+   `PHONEBOOK_TOKEN` **çok önemli** — bu olmadan `/phonebook.xml` herkese açık olur,
+   linki bilen herkes çalışan isim/dahili listesini görebilir. Rastgele, tahmin
+   edilemeyen bir değer seçin (örn. 24+ karakter, harf+rakam karışık).
 5. Deploy tamamlandığında Railway size bir URL verir, örneğin:
    ```
    https://yealink-phonebook-production.up.railway.app
    ```
-6. Bu adrese gidip CSV'nizi yükleyin. Rehber şu adreste yayınlanır:
+6. Bu adrese gidip CSV'nizi yükleyin. Rehber artık şu adreste (token ile) yayınlanır:
    ```
-   https://yealink-phonebook-production.up.railway.app/phonebook.xml
+   https://yealink-phonebook-production.up.railway.app/phonebook.xml?key=PHONEBOOK_TOKEN_DEGERINIZ
    ```
+   `key=` değeri olmadan veya yanlış girilirse istek **403 Erişim reddedildi** döner.
 
 ## ÖNEMLİ: Kalıcı disk (Volume) ekleyin
 
@@ -42,7 +47,7 @@ Bu olmadan da çalışır, sadece her deploy/restart sonrası CSV'yi tekrar yük
 Her telefonda bir kez:
 1. Telefonun web arayüzüne girin (`http://<telefon-ip>`, varsayılan admin/admin)
 2. **Directory > Remote Phone Book** sekmesi
-3. **Remote URL**: `https://sizin-railway-adresiniz.up.railway.app/phonebook.xml`
+3. **Remote URL**: `https://sizin-railway-adresiniz.up.railway.app/phonebook.xml?key=PHONEBOOK_TOKEN_DEGERINIZ`
 4. **Display Name**: örn. "Şirket Rehberi"
 5. Confirm
 
@@ -67,6 +72,10 @@ npm start
 ## Güvenlik notu
 
 - `UPLOAD_PASSWORD`'ü mutlaka değiştirin, varsayılan değeri kullanmayın.
-- `/phonebook.xml` endpoint'i herkese açıktır (telefonlar kimlik doğrulama göndermez).
-  İçinde sadece isim + dahili numara olduğu için genelde kabul edilebilir bir risktir,
-  ama isterseniz Railway'de bu path için ayrı bir erişim kısıtlaması ekleyebilirsiniz.
+- `PHONEBOOK_TOKEN`'ı mutlaka tanımlayın. Tanımlamazsanız `/phonebook.xml` linkini
+  bilen **herkes** (internet üzerinden) çalışan isim/dahili listenizi görebilir.
+- Token'ı kimseyle paylaşmayın, sadece telefonlara girerken kullanın. Token'ı
+  değiştirmek isterseniz Railway Variables'ta güncelleyip tüm telefonlarda
+  Remote URL'yi yeni token'la tekrar girmeniz gerekir.
+- CSV export ederken FreePBX'te **Secret/Password sütununu dahil etmeyin** —
+  script bu sütunu okumasa da dosyanın içinde durmasını istemezsiniz.
