@@ -3,6 +3,7 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse/sync');
+const XLSX = require('xlsx');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,8 +21,8 @@ const UPLOAD_PASSWORD = process.env.UPLOAD_PASSWORD || 'change-this-password';
 const PHONEBOOK_TOKEN = process.env.PHONEBOOK_TOKEN || null;
 
 const DATA_DIR = path.join(__dirname, 'data');
-const EXTENSIONS_CSV_PATH = path.join(DATA_DIR, 'extensions.csv');
-const RING_GROUPS_CSV_PATH = path.join(DATA_DIR, 'ringgroups.csv');
+const EXTENSIONS_DATA_PATH = path.join(DATA_DIR, 'extensions.data');
+const RING_GROUPS_DATA_PATH = path.join(DATA_DIR, 'ringgroups.data');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -37,6 +38,27 @@ function escapeXml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+// Parses either a .csv or .xlsx buffer into an array of row objects
+// (each object keyed by column header), regardless of format. Detected by
+// content, not filename, so it still works correctly after the file has
+// been saved to disk under a fixed name.
+function bufferToRecords(buffer) {
+  // .xlsx files are zip archives, which always start with the bytes 'PK'.
+  const isZip = buffer.length > 2 && buffer[0] === 0x50 && buffer[1] === 0x4b;
+  if (isZip) {
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const firstSheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[firstSheetName];
+    return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+  }
+  return parse(buffer, {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+    bom: true,
+  });
 }
 
 // Flexibly finds the name/number columns from the CSV content.
@@ -63,19 +85,14 @@ function findColumn(headers, candidates) {
   return null;
 }
 
-// Parses a CSV buffer into a list of {name, number} entries.
+// Parses a CSV or XLSX buffer into a list of {name, number} entries.
 // numberCandidates/nameCandidates let callers use different column-name
 // guesses for Extensions vs Ring Groups exports.
-function csvToEntries(csvBuffer, numberCandidates, nameCandidates, label) {
-  const records = parse(csvBuffer, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-    bom: true,
-  });
+function fileToEntries(fileBuffer, numberCandidates, nameCandidates, label) {
+  const records = bufferToRecords(fileBuffer);
 
   if (records.length === 0) {
-    throw new Error(`${label} CSV appears to be empty.`);
+    throw new Error(`${label} file appears to be empty.`);
   }
 
   const headers = Object.keys(records[0]);
@@ -84,7 +101,7 @@ function csvToEntries(csvBuffer, numberCandidates, nameCandidates, label) {
 
   if (!numCol) {
     throw new Error(
-      `${label}: number column not found. CSV headers: ${headers.join(', ')}`
+      `${label}: number column not found. File headers: ${headers.join(', ')}`
     );
   }
 
@@ -108,11 +125,11 @@ function entriesToXml(entries) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<YealinkIPPhoneDirectory>\n${body}\n</YealinkIPPhoneDirectory>\n`;
 }
 
-// Builds the combined directory from whichever CSVs have been uploaded.
+// Builds the combined directory from whichever files have been uploaded.
 // At least one of the two must exist.
 function buildCombinedXml() {
-  const extensionsExist = fs.existsSync(EXTENSIONS_CSV_PATH);
-  const ringGroupsExist = fs.existsSync(RING_GROUPS_CSV_PATH);
+  const extensionsExist = fs.existsSync(EXTENSIONS_DATA_PATH);
+  const ringGroupsExist = fs.existsSync(RING_GROUPS_DATA_PATH);
 
   if (!extensionsExist && !ringGroupsExist) {
     const err = new Error('No directory uploaded yet.');
@@ -123,16 +140,16 @@ function buildCombinedXml() {
   let entries = [];
 
   if (extensionsExist) {
-    const buf = fs.readFileSync(EXTENSIONS_CSV_PATH);
+    const buf = fs.readFileSync(EXTENSIONS_DATA_PATH);
     entries = entries.concat(
-      csvToEntries(buf, ['extension', 'ext', 'number'], ['name', 'description', 'cidname'], 'Extensions')
+      fileToEntries(buf, ['extension', 'ext', 'number'], ['name', 'description', 'cidname'], 'Extensions')
     );
   }
 
   if (ringGroupsExist) {
-    const buf = fs.readFileSync(RING_GROUPS_CSV_PATH);
+    const buf = fs.readFileSync(RING_GROUPS_DATA_PATH);
     entries = entries.concat(
-      csvToEntries(buf, ['ring group', 'ringgroup', 'grpnum', 'extension', 'number'], ['description', 'name'], 'Ring Groups')
+      fileToEntries(buf, ['ring group', 'ringgroup', 'grpnum', 'extension', 'number'], ['description', 'name'], 'Ring Groups')
     );
   }
 
@@ -187,11 +204,11 @@ app.get('/', (req, res) => {
     <label>Password</label>
     <input type="password" name="password" required>
 
-    <h2>Extensions CSV</h2>
-    <input type="file" name="extensions_csv" accept=".csv">
+    <h2>Extensions (CSV or Excel)</h2>
+    <input type="file" name="extensions_csv" accept=".csv,.xlsx,.xls">
 
-    <h2>Ring Groups CSV</h2>
-    <input type="file" name="ringgroups_csv" accept=".csv">
+    <h2>Ring Groups (CSV or Excel)</h2>
+    <input type="file" name="ringgroups_csv" accept=".csv,.xlsx,.xls">
 
     <button type="submit">Upload</button>
   </form>
@@ -220,11 +237,11 @@ app.post(
     const updated = [];
     try {
       if (extFile) {
-        fs.writeFileSync(EXTENSIONS_CSV_PATH, extFile.buffer);
+        fs.writeFileSync(EXTENSIONS_DATA_PATH, extFile.buffer);
         updated.push('Extensions');
       }
       if (ringFile) {
-        fs.writeFileSync(RING_GROUPS_CSV_PATH, ringFile.buffer);
+        fs.writeFileSync(RING_GROUPS_DATA_PATH, ringFile.buffer);
         updated.push('Ring Groups');
       }
       // validate combined output so mistakes surface immediately
