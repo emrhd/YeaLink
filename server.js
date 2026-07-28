@@ -44,8 +44,15 @@ function escapeXml(str) {
 // module (Extensions vs Ring Groups), so we scan for common names.
 function findColumn(headers, candidates) {
   const lower = headers.map(h => h.toLowerCase().trim());
+  const normalized = lower.map(h => h.replace(/\s+/g, ''));
+
   for (const cand of candidates) {
     const idx = lower.indexOf(cand);
+    if (idx !== -1) return headers[idx];
+  }
+  // exact match ignoring spaces (e.g. "Ring Group" vs "ringgroup")
+  for (const cand of candidates) {
+    const idx = normalized.indexOf(cand.replace(/\s+/g, ''));
     if (idx !== -1) return headers[idx];
   }
   // partial match
@@ -125,7 +132,7 @@ function buildCombinedXml() {
   if (ringGroupsExist) {
     const buf = fs.readFileSync(RING_GROUPS_CSV_PATH);
     entries = entries.concat(
-      csvToEntries(buf, ['ringgroup', 'grpnum', 'extension', 'number'], ['description', 'name'], 'Ring Groups')
+      csvToEntries(buf, ['ring group', 'ringgroup', 'grpnum', 'extension', 'number'], ['description', 'name'], 'Ring Groups')
     );
   }
 
