@@ -163,68 +163,75 @@ app.get('/', (req, res) => {
 <style>
   body { font-family: system-ui, sans-serif; max-width: 480px; margin: 60px auto; padding: 0 20px; color: #222; }
   h1 { font-size: 20px; }
-  h2 { font-size: 15px; margin-top: 36px; }
+  h2 { font-size: 15px; margin-top: 28px; margin-bottom: 4px; }
   label { display: block; margin-top: 16px; font-size: 14px; font-weight: 600; }
   input[type=file], input[type=password] { display: block; margin-top: 6px; width: 100%; padding: 8px; box-sizing: border-box; }
-  button { margin-top: 20px; padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  button { margin-top: 24px; padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
   button:hover { background: #1d4ed8; }
-  hr { margin-top: 32px; border: none; border-top: 1px solid #e5e7eb; }
-  .info { margin-top: 24px; padding: 12px; background: #f3f4f6; border-radius: 6px; font-size: 13px; line-height: 1.5; }
+  .note { font-size: 12px; color: #6b7280; margin-top: 4px; }
 </style>
 </head>
 <body>
   <h1>📞 Yealink Directory Update</h1>
+  <p>Upload either file, or both. Whichever you upload replaces only that
+  list — the other one stays as-is.</p>
 
-  <h2>Extensions</h2>
-  <p>Upload the CSV from FreePBX &gt; Bulk Handler &gt; Export &gt; Extensions.</p>
-  <form method="POST" action="/upload/extensions" enctype="multipart/form-data">
+  <form method="POST" action="/upload" enctype="multipart/form-data">
     <label>Password</label>
     <input type="password" name="password" required>
-    <label>CSV File</label>
-    <input type="file" name="csv" accept=".csv" required>
-    <button type="submit">Upload Extensions</button>
-  </form>
 
-  <hr>
+    <h2>Extensions CSV</h2>
+    <input type="file" name="extensions_csv" accept=".csv">
 
-  <h2>Ring Groups</h2>
-  <p>Upload the CSV from FreePBX &gt; Bulk Handler &gt; Export &gt; Ring Groups.</p>
-  <form method="POST" action="/upload/ringgroups" enctype="multipart/form-data">
-    <label>Password</label>
-    <input type="password" name="password" required>
-    <label>CSV File</label>
-    <input type="file" name="csv" accept=".csv" required>
-    <button type="submit">Upload Ring Groups</button>
+    <h2>Ring Groups CSV</h2>
+    <input type="file" name="ringgroups_csv" accept=".csv">
+
+    <button type="submit">Upload</button>
   </form>
 </body>
 </html>`);
 });
 
-function handleUpload(csvPath, label) {
-  return (req, res) => {
+app.post(
+  '/upload',
+  upload.fields([
+    { name: 'extensions_csv', maxCount: 1 },
+    { name: 'ringgroups_csv', maxCount: 1 },
+  ]),
+  (req, res) => {
     if (req.body.password !== UPLOAD_PASSWORD) {
       return res.status(403).send('Wrong password. <a href="/">Go back</a>');
     }
-    if (!req.file) {
+
+    const extFile = req.files?.extensions_csv?.[0];
+    const ringFile = req.files?.ringgroups_csv?.[0];
+
+    if (!extFile && !ringFile) {
       return res.status(400).send('No file selected. <a href="/">Go back</a>');
     }
+
+    const updated = [];
     try {
-      fs.writeFileSync(csvPath, req.file.buffer);
+      if (extFile) {
+        fs.writeFileSync(EXTENSIONS_CSV_PATH, extFile.buffer);
+        updated.push('Extensions');
+      }
+      if (ringFile) {
+        fs.writeFileSync(RING_GROUPS_CSV_PATH, ringFile.buffer);
+        updated.push('Ring Groups');
+      }
       // validate combined output so mistakes surface immediately
       buildCombinedXml();
       res.send(`
-        <p>✅ ${label} updated.</p>
+        <p>✅ ${updated.join(' and ')} updated.</p>
         <p><a href="/phonebook.xml" target="_blank">View combined XML</a></p>
         <p><a href="/">Go back</a></p>
       `);
     } catch (err) {
       res.status(400).send(`❌ Error: ${err.message}<br><a href="/">Go back</a>`);
     }
-  };
-}
-
-app.post('/upload/extensions', upload.single('csv'), handleUpload(EXTENSIONS_CSV_PATH, 'Extensions'));
-app.post('/upload/ringgroups', upload.single('csv'), handleUpload(RING_GROUPS_CSV_PATH, 'Ring Groups'));
+  }
+);
 
 app.listen(PORT, () => {
   console.log(`Yealink phonebook service running on port ${PORT}.`);
