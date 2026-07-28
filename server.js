@@ -1,10 +1,10 @@
 const express = require('express');
-//
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse/sync');
 const XLSX = require('xlsx');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,6 +30,29 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.urlencoded({ extended: true }));
+
+// Brute-force protection: limits repeated password/token guessing from a
+// single IP. After hitting the limit, that IP gets a 429 response until the
+// window resets - it does not lock out other users.
+
+// Upload form: password guessing protection. 10 attempts per 15 minutes.
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many upload attempts. Please wait 15 minutes and try again.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Directory XML: token guessing protection. Generous limit since real
+// phones poll this regularly, but still blocks rapid brute-force attempts.
+const phonebookLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: 'Too many requests. Please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Escape special XML characters
 function escapeXml(str) {
@@ -158,7 +181,7 @@ function buildCombinedXml() {
 }
 
 // --- XML endpoint the Yealink phones fetch ---
-app.get('/phonebook.xml', (req, res) => {
+app.get('/phonebook.xml', phonebookLimiter, (req, res) => {
   if (PHONEBOOK_TOKEN) {
     if (req.query.key !== PHONEBOOK_TOKEN) {
       return res.status(403).type('text/plain').send('Access denied: invalid or missing key.');
@@ -219,6 +242,7 @@ app.get('/', (req, res) => {
 
 app.post(
   '/upload',
+  uploadLimiter,
   upload.fields([
     { name: 'extensions_csv', maxCount: 1 },
     { name: 'ringgroups_csv', maxCount: 1 },
