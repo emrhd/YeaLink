@@ -132,7 +132,7 @@ function buildCombinedXml() {
   if (ringGroupsExist) {
     const buf = fs.readFileSync(RING_GROUPS_CSV_PATH);
     entries = entries.concat(
-      csvToEntries(buf, ['ring group', 'ringgroup', 'grpnum', 'extension', 'number'], ['description', 'name'], 'Ring Groups')
+      csvToEntries(buf, ['Ring Group', 'ring group', 'ringgroup', 'grpnum', 'extension', 'number'], ['Description', 'description', 'name'], 'Ring Groups')
     );
   }
 
