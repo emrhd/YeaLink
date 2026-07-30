@@ -139,7 +139,7 @@ function fileToEntries(fileBuffer, numberCandidates, nameCandidates, label) {
     .filter(Boolean);
 }
 
-function entriesToXml(entries) {
+function entriesToYealinkXml(entries) {
   const body = entries
     .map(
       e =>
@@ -149,9 +149,23 @@ function entriesToXml(entries) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<YealinkIPPhoneDirectory>\n${body}\n</YealinkIPPhoneDirectory>\n`;
 }
 
-// Builds the combined directory from whichever files have been uploaded.
-// At least one of the two must exist.
-function buildCombinedXml() {
+// Zoiper5's official "XML Contact Service" schema (Contacts/Contact/Name +
+// Phone with Type=Work|Home, PhoneType=Phone|Cell|Pager|IPPhone|Mail|Fax|
+// Custom, and the actual number in <Phone>). If Zoiper reports an error
+// importing this, share the exact message and we'll adjust field names.
+function entriesToZoiperXml(entries) {
+  const body = entries
+    .map((e, i) => {
+      const id = i + 1;
+      return `  <Contact id="${id}">\n    <Name>\n      <First>${escapeXml(e.name)}</First>\n      <Display>${escapeXml(e.name)}</Display>\n    </Name>\n    <Phone>\n      <Type>Work</Type>\n      <PhoneType>IPPhone</PhoneType>\n      <Phone>${escapeXml(e.number)}</Phone>\n    </Phone>\n  </Contact>`;
+    })
+    .join('\n');
+  return `<?xml version="1.0" encoding="utf-8"?>\n<Contacts>\n${body}\n</Contacts>\n`;
+}
+
+// Builds the combined list of {name, number} entries from whichever files
+// have been uploaded. At least one of the two must exist.
+function buildEntries() {
   const extensionsExist = fs.existsSync(EXTENSIONS_DATA_PATH);
   const ringGroupsExist = fs.existsSync(RING_GROUPS_DATA_PATH);
 
@@ -177,7 +191,7 @@ function buildCombinedXml() {
     );
   }
 
-  return entriesToXml(entries);
+  return entries;
 }
 
 // --- XML endpoint the Yealink phones fetch ---
@@ -188,7 +202,29 @@ app.get('/phonebook.xml', phonebookLimiter, (req, res) => {
     }
   }
   try {
-    const xml = buildCombinedXml();
+    const xml = entriesToYealinkXml(buildEntries());
+    res.type('application/xml').send(xml);
+  } catch (err) {
+    if (err.code === 'NO_DATA') {
+      return res
+        .status(404)
+        .type('text/plain')
+        .send('No directory uploaded yet. Upload a CSV from / first.');
+    }
+    res.status(500).type('text/plain').send('Error: ' + err.message);
+  }
+});
+
+// --- Same data, in the generic AddressBook/Contact format some softphones
+// (e.g. Zoiper) expect. Use this URL in Zoiper's XML Contacts service. ---
+app.get('/phonebook-zoiper.xml', phonebookLimiter, (req, res) => {
+  if (PHONEBOOK_TOKEN) {
+    if (req.query.key !== PHONEBOOK_TOKEN) {
+      return res.status(403).type('text/plain').send('Access denied: invalid or missing key.');
+    }
+  }
+  try {
+    const xml = entriesToZoiperXml(buildEntries());
     res.type('application/xml').send(xml);
   } catch (err) {
     if (err.code === 'NO_DATA') {
@@ -270,7 +306,7 @@ app.post(
         updated.push('Ring Groups');
       }
       // validate combined output so mistakes surface immediately
-      buildCombinedXml();
+      buildEntries();
       res.send(`
         <p>✅ ${updated.join(' and ')} updated.</p>
         <p><a href="/phonebook.xml" target="_blank">View combined XML</a></p>
